@@ -30,6 +30,7 @@ import static com.android.SdkConstants.VIEW_INCLUDE;
 
 import com.android.SdkConstants;
 import com.android.ide.common.rendering.LayoutLibrary;
+import com.android.ide.common.rendering.RenderSecurityManager;
 import com.android.ide.common.rendering.api.AdapterBinding;
 import com.android.ide.common.rendering.api.DataBindingItem;
 import com.android.ide.common.rendering.api.ILayoutPullParser;
@@ -82,12 +83,12 @@ public final class ProjectCallback extends LegacyCallback {
     private final IProject mProject;
     private final ClassLoader mParentClassLoader;
     private final ProjectResources mProjectRes;
+    private final Object mCredential;
     private boolean mUsed = false;
     private String mNamespace;
     private ProjectClassLoader mLoader = null;
     private LayoutLog mLogger;
     private LayoutLibrary mLayoutLib;
-
     private String mLayoutName;
     private ILayoutPullParser mLayoutEmbeddedParser;
     private ResourceResolver mResourceResolver;
@@ -98,13 +99,15 @@ public final class ProjectCallback extends LegacyCallback {
      * @param layoutLib The layout library this callback is going to be invoked from
      * @param projectRes the {@link ProjectResources} for the project.
      * @param project the project.
+     * @param credential the sandbox credential
      */
     public ProjectCallback(LayoutLibrary layoutLib,
-            ProjectResources projectRes, IProject project) {
+            ProjectResources projectRes, IProject project, Object credential) {
         mLayoutLib = layoutLib;
         mParentClassLoader = layoutLib.getClassLoader();
         mProjectRes = projectRes;
         mProject = project;
+        mCredential = credential;
     }
 
     public Set<String> getMissingClasses() {
@@ -161,7 +164,15 @@ public final class ProjectCallback extends LegacyCallback {
 
         try {
             if (mLoader == null) {
-                mLoader = new ProjectClassLoader(mParentClassLoader, mProject);
+                // Allow creating class loaders during rendering; may be prevented by the
+                // RenderSecurityManager
+                boolean token = RenderSecurityManager.enterSafeRegion(mCredential);
+                try {
+                  System.setSecurityManager(null);
+                  mLoader = new ProjectClassLoader(mParentClassLoader, mProject);
+                } finally {
+                    RenderSecurityManager.exitSafeRegion(token);
+                }
             }
             clazz = mLoader.loadClass(className);
         } catch (Exception e) {
